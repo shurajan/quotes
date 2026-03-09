@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "qlib",
+    "qclient",
+    "qserver",
+]
