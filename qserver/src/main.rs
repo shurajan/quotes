@@ -77,10 +77,8 @@ fn run(args: Args) -> anyhow::Result<()> {
     thread::spawn(move || {
         for event in rx_test {
             log::info!(
-                "{}: price={:.2} vol={}",
-                event.ticker,
-                event.quote.price,
-                event.quote.volume
+                "{}",
+                event.quote,
             );
         }
     });
