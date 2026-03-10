@@ -11,3 +11,4 @@ anyhow.workspace = true
 log.workspace = true
 env_logger.workspace = true
 crossbeam-channel.workspace = true
+thiserror.workspace = true

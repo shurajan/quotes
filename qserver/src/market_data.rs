@@ -2,9 +2,10 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use qlib::stock_quote::{StockQuote, Ticker};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use thiserror::Error;
 
 #[derive(Clone, Debug)]
-pub struct Event {
+pub(crate) struct Event {
     pub(crate) ticker: Ticker,
     pub(crate) quote: StockQuote,
 }
@@ -14,6 +15,12 @@ pub struct EventBus {
     subs: Arc<Mutex<HashMap<Ticker, Vec<Sender<Event>>>>>,
 }
 
+#[derive(Error, Debug)]
+pub enum BusError {
+    #[error("lock poisoned")]
+    LockPoisoned,
+}
+
 impl EventBus {
     pub fn new() -> Self {
         Self {
@@ -21,22 +28,21 @@ impl EventBus {
         }
     }
 
-    /// Subscription to the list of stocks.
-    /// Returns one Receiver to gather all events.
-    pub fn subscribe(&self, tickers: &[Ticker]) -> Receiver<Event> {
+    pub fn subscribe(&self, tickers: &[Ticker]) -> Result<Receiver<Event>, BusError> {
         let (tx, rx) = unbounded();
-        let mut subs = self.subs.lock().unwrap();
+        let mut subs = self.subs.lock().map_err(|_| BusError::LockPoisoned)?;
         for id in tickers {
             subs.entry(id.to_string()).or_default().push(tx.clone());
         }
-        rx
+        Ok(rx)
     }
 
-    pub fn publish(&self, event: Event) {
-        let mut subs = self.subs.lock().unwrap();
+    pub fn publish(&self, event: Event) -> Result<(), BusError> {
+        let mut subs = self.subs.lock().map_err(|_| BusError::LockPoisoned)?;
         if let Some(senders) = subs.get_mut(&event.ticker) {
             senders.retain(|tx| tx.send(event.clone()).is_ok());
         }
+        Ok(())
     }
 }
 
@@ -47,7 +53,7 @@ mod tests {
     #[test]
     fn subscribe_and_receive() {
         let bus = EventBus::new();
-        let rx = bus.subscribe(&["AAPL".into()]);
+        let rx = bus.subscribe(&["AAPL".into()]).unwrap();
 
         let event = Event {
             ticker: "AAPL".into(),
@@ -68,7 +74,7 @@ mod tests {
     #[test]
     fn no_event_for_other_ticker() {
         let bus = EventBus::new();
-        let rx = bus.subscribe(&["AAPL".into()]);
+        let rx = bus.subscribe(&["AAPL".into()]).unwrap();
 
         bus.publish(Event {
             ticker: "GOOG".into(),
@@ -86,7 +92,7 @@ mod tests {
     #[test]
     fn multiple_tickers_one_receiver() {
         let bus = EventBus::new();
-        let rx = bus.subscribe(&["AAPL".into(), "GOOG".into()]);
+        let rx = bus.subscribe(&["AAPL".into(), "GOOG".into()]).unwrap();
 
         for ticker in &["AAPL", "GOOG"] {
             bus.publish(Event {
@@ -107,7 +113,7 @@ mod tests {
     #[test]
     fn dropped_receiver_cleaned_up() {
         let bus = EventBus::new();
-        let rx = bus.subscribe(&["AAPL".into()]);
+        let rx = bus.subscribe(&["AAPL".into()]).unwrap();
         drop(rx);
 
         bus.publish(Event {

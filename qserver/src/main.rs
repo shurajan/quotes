@@ -60,7 +60,7 @@ fn run(args: Args) -> anyhow::Result<()> {
     let bus = EventBus::new();
     let mut prices = Prices::new(tickers.clone());
 
-    let rx = bus.subscribe(&tickers);
+    let rx = bus.subscribe(&tickers)?;
     thread::spawn(move || {
         for event in rx {
             log::debug!(
@@ -73,13 +73,10 @@ fn run(args: Args) -> anyhow::Result<()> {
     });
 
     //TODO - delete
-    let rx_test = bus.subscribe(&*vec!["AAPL".to_string(), "MSFT".to_string()]);
+    let rx_test = bus.subscribe(&*vec!["AAPL".to_string(), "MSFT".to_string()])?;
     thread::spawn(move || {
         for event in rx_test {
-            log::info!(
-                "{}",
-                event.quote,
-            );
+            log::info!("{}", event.quote,);
         }
     });
 
@@ -97,7 +94,7 @@ fn run(args: Args) -> anyhow::Result<()> {
             bus.publish(Event {
                 ticker: quote.ticker.clone(),
                 quote: quote.clone(),
-            });
+            })?;
         }
 
         thread::sleep(interval);
