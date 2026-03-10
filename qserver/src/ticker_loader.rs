@@ -15,7 +15,10 @@ impl std::fmt::Display for TickerLoadError {
         match self {
             Self::Io(err) => write!(f, "failed to read tickers file: {err}"),
             Self::EmptyOrInvalidFile(path) => {
-                write!(f, "tickers file '{path}' is empty or contains no valid tickers")
+                write!(
+                    f,
+                    "tickers file '{path}' is empty or contains no valid tickers"
+                )
             }
         }
     }
@@ -35,7 +38,9 @@ fn load_tickers_from_file(path: &Path) -> Result<Vec<String>, TickerLoadError> {
     let tickers = parse_tickers(&content);
 
     if tickers.is_empty() {
-        return Err(TickerLoadError::EmptyOrInvalidFile(path.display().to_string()));
+        return Err(TickerLoadError::EmptyOrInvalidFile(
+            path.display().to_string(),
+        ));
     }
 
     Ok(tickers)
@@ -67,8 +72,8 @@ fn normalize_ticker(line: &str) -> String {
 fn is_valid_ticker(ticker: &str) -> bool {
     !ticker.is_empty()
         && ticker
-        .chars()
-        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '.' || c == '-')
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '.' || c == '-')
 }
 
 #[cfg(test)]
@@ -163,7 +168,10 @@ RDS-A
 
         let result = load_tickers(Some(path.clone()));
 
-        assert!(matches!(result, Err(TickerLoadError::EmptyOrInvalidFile(_))));
+        assert!(matches!(
+            result,
+            Err(TickerLoadError::EmptyOrInvalidFile(_))
+        ));
 
         let _ = fs::remove_file(path);
     }
@@ -175,7 +183,10 @@ RDS-A
 
         let result = load_tickers(Some(path.clone()));
 
-        assert!(matches!(result, Err(TickerLoadError::EmptyOrInvalidFile(_))));
+        assert!(matches!(
+            result,
+            Err(TickerLoadError::EmptyOrInvalidFile(_))
+        ));
 
         let _ = fs::remove_file(path);
     }

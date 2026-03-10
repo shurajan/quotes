@@ -1,11 +1,14 @@
-use std::fmt::{Display};
+use std::fmt::Display;
 
-/// Размер тикера в бинарном формате (байт). Дополняется `\0` справа.
+/// Ticker
+pub type Ticker = String;
+
+/// Ticker size in binary format (bytes). Padded with `\0` on the right.
 pub const TICKER_SIZE: usize = 8;
 
-/// Полный размер бинарного пакета (байт).
+/// Full binary packet size (bytes).
 ///
-/// | Поле      | Смещение | Размер | Формат          |
+/// | Field     | Offset   | Size   | Format          |
 /// |-----------|----------|--------|-----------------|
 /// | ticker    | 0        | 8      | UTF-8 + `\0`-pad|
 /// | price     | 8        | 8      | f64 BE          |
@@ -13,15 +16,15 @@ pub const TICKER_SIZE: usize = 8;
 /// | timestamp | 20       | 8      | u64 BE          |
 pub const PACKET_SIZE: usize = TICKER_SIZE + 8 + 4 + 8; // 28
 
-/// Котировка акции — снимок цены, объёма и времени для одного тикера.
+/// Stock quote — a snapshot of price, volume, and time for a single ticker.
 ///
-/// Поддерживает два формата сериализации:
-/// - **бинарный** ([`to_bytes`] / [`from_bytes`]) — 28 байт, big-endian,
-///   предназначен для передачи по UDP;
-/// - **текстовый** ([`serialize`] / [`deserialize`]) — через `|`,
-///   удобен для логов и отладки.
+/// Supports two serialization formats:
+/// - **binary** ([`to_bytes`] / [`from_bytes`]) — 28 bytes, big-endian,
+///   intended for UDP transmission;
+/// - **text** ([`serialize`] / [`deserialize`]) — `|`-delimited,
+///   convenient for logs and debugging.
 ///
-/// # Пример
+/// # Example
 ///
 /// ```
 /// use qlib::stock_quote::StockQuote;
@@ -33,7 +36,7 @@ pub const PACKET_SIZE: usize = TICKER_SIZE + 8 + 4 + 8; // 28
 ///     timestamp: 1_700_000_000,
 /// };
 ///
-/// // Бинарный roundtrip
+/// // Binary roundtrip
 /// let bytes = q.to_bytes();
 /// assert_eq!(bytes.len(), 28);
 /// let restored = StockQuote::from_bytes(&bytes).unwrap();
@@ -41,18 +44,18 @@ pub const PACKET_SIZE: usize = TICKER_SIZE + 8 + 4 + 8; // 28
 /// ```
 #[derive(Debug, Clone)]
 pub struct StockQuote {
-    /// Биржевой тикер, например `"AAPL"`, `"TSLA"`.
-    /// Не более [`TICKER_SIZE`] байт в UTF-8.
-    pub ticker: String,
-    /// Цена за акцию (USD). Не может быть отрицательной в корректных данных.
+    /// Stock ticker, e.g. `"AAPL"`, `"TSLA"`.
+    /// No more than [`TICKER_SIZE`] bytes in UTF-8.
+    pub ticker: Ticker,
+    /// Price per share (USD). Cannot be negative in valid data.
     pub price: f64,
-    /// Объём торгов (штук). `u32` ограничивает макс. ~4.29 млрд.
+    /// Trading volume (shares). `u32` limits max to ~4.29 billion.
     pub volume: u32,
-    /// Unix-время (секунды) момента котировки.
+    /// Unix time (seconds) of the quote moment.
     pub timestamp: u64,
 }
 
-/// Человеко-читаемый вывод с выравниванием столбцов.
+/// Human-readable output with column alignment.
 ///
 /// ```text
 /// AAPL:
@@ -70,14 +73,14 @@ impl Display for StockQuote {
     }
 }
 
-// ── Бинарная сериализация (для UDP) ────────────────
+// ── Binary serialization (for UDP) ────────────────
 
 impl StockQuote {
-    /// Сериализует котировку в фиксированный буфер [`PACKET_SIZE`] байт (big-endian).
+    /// Serializes the quote into a fixed [`PACKET_SIZE`]-byte buffer (big-endian).
     pub fn to_bytes(&self) -> [u8; PACKET_SIZE] {
         let mut buf = [0u8; PACKET_SIZE];
 
-        // ticker → первые TICKER_SIZE байт, остаток заполнен \0
+        // ticker → first TICKER_SIZE bytes, remainder filled with \0
         let ticker_bytes = self.ticker.as_bytes();
         let len = ticker_bytes.len().min(TICKER_SIZE);
         buf[..len].copy_from_slice(&ticker_bytes[..len]);
@@ -88,30 +91,40 @@ impl StockQuote {
         buf
     }
 
-    /// Восстанавливает котировку из буфера [`PACKET_SIZE`] байт
-    /// Возвращает `None`, если:
-    /// - длина среза ≠ [`PACKET_SIZE`],
-    /// - поле ticker содержит невалидный UTF-8.
+    /// Restores a quote from a [`PACKET_SIZE`]-byte buffer.
+    /// Returns `None` if:
+    /// - the slice length ≠ [`PACKET_SIZE`],
+    /// - the ticker field contains invalid UTF-8.
     pub fn from_bytes(buf: &[u8]) -> Option<Self> {
         if buf.len() != PACKET_SIZE {
             return None;
         }
 
-        // ticker: отрезаем trailing \0
+        // ticker: trim trailing \0
         let ticker_raw = &buf[..TICKER_SIZE];
-        let ticker_end = ticker_raw.iter().position(|&b| b == 0).unwrap_or(TICKER_SIZE);
-        let ticker = std::str::from_utf8(&ticker_raw[..ticker_end]).ok()?.to_string();
+        let ticker_end = ticker_raw
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(TICKER_SIZE);
+        let ticker = std::str::from_utf8(&ticker_raw[..ticker_end])
+            .ok()?
+            .to_string();
 
         let price = f64::from_be_bytes(buf[8..16].try_into().ok()?);
         let volume = u32::from_be_bytes(buf[16..20].try_into().ok()?);
         let timestamp = u64::from_be_bytes(buf[20..28].try_into().ok()?);
 
-        Some(StockQuote { ticker, price, volume, timestamp })
+        Some(StockQuote {
+            ticker,
+            price,
+            volume,
+            timestamp,
+        })
     }
 }
 
 impl StockQuote {
-    /// Сериализует котировку в строку с разделителем `|`.
+    /// Serializes the quote into a `|`-delimited string.
     pub fn serialize(&self) -> String {
         format!(
             "{}|{}|{}|{}",
@@ -119,7 +132,7 @@ impl StockQuote {
         )
     }
 
-    /// Восстанавливает котировку из строки формата `TICKER|PRICE|VOLUME|TIMESTAMP`.
+    /// Restores a quote from a string in `TICKER|PRICE|VOLUME|TIMESTAMP` format.
     pub fn deserialize(s: &str) -> Option<Self> {
         let parts: Vec<&str> = s.split('|').collect();
         if parts.len() == 4 {
@@ -136,7 +149,7 @@ impl StockQuote {
 }
 
 // ─────────────────────────────────────────────
-//  Тесты
+//  Tests
 // ─────────────────────────────────────────────
 #[cfg(test)]
 mod tests {
@@ -170,14 +183,14 @@ mod tests {
     #[test]
     fn binary_ticker_padded_with_zeros() {
         let buf = sample().to_bytes();
-        // "AAPL" = 4 байта, оставшиеся 4 должны быть \0
+        // "AAPL" = 4 bytes, remaining 4 should be \0
         assert_eq!(&buf[4..8], &[0, 0, 0, 0]);
     }
 
     #[test]
     fn binary_ticker_exact_max_length() {
         let q = StockQuote {
-            ticker: "ABCDEFGH".into(), // 8 байт
+            ticker: "ABCDEFGH".into(), // 8 bytes
             ..sample()
         };
         let restored = StockQuote::from_bytes(&q.to_bytes()).unwrap();
@@ -206,21 +219,30 @@ mod tests {
 
     #[test]
     fn binary_big_endian_price() {
-        let q = StockQuote { price: 1.0, ..sample() };
+        let q = StockQuote {
+            price: 1.0,
+            ..sample()
+        };
         let buf = q.to_bytes();
         assert_eq!(&buf[8..16], &0x3FF0_0000_0000_0000u64.to_be_bytes());
     }
 
     #[test]
     fn binary_big_endian_volume() {
-        let q = StockQuote { volume: 0x01020304, ..sample() };
+        let q = StockQuote {
+            volume: 0x01020304,
+            ..sample()
+        };
         let buf = q.to_bytes();
         assert_eq!(&buf[16..20], &[0x01, 0x02, 0x03, 0x04]);
     }
 
     #[test]
     fn binary_big_endian_timestamp() {
-        let q = StockQuote { timestamp: 1, ..sample() };
+        let q = StockQuote {
+            timestamp: 1,
+            ..sample()
+        };
         let buf = q.to_bytes();
         assert_eq!(&buf[20..28], &[0, 0, 0, 0, 0, 0, 0, 1]);
     }
@@ -326,5 +348,4 @@ mod tests {
     fn display_price_two_decimals() {
         assert!(format!("{}", sample()).contains("189.50"));
     }
-
 }

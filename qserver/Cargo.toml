@@ -8,3 +8,6 @@ rand.workspace = true
 qlib = { path = "../qlib", version = "0.1.0" }
 clap.workspace = true
 anyhow.workspace = true
+log.workspace = true
+env_logger.workspace = true
+crossbeam-channel.workspace = true
