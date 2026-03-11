@@ -3,7 +3,10 @@ use anyhow::Context;
 use clap::Parser;
 use market_data::EventBus;
 use prices::Prices;
+use std::io::{BufRead, BufReader};
+use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use ticker_loader::load_tickers;
@@ -27,11 +30,13 @@ struct Args {
     #[arg(short, long, default_value = "info")]
     log_level: String,
     /// Price update interval in milliseconds
-    #[arg(short, long, default_value = "100")]
+    #[arg(short, long, default_value = "150")]
     interval_ms: u64,
     /// Max price change per tick in percent
-    #[arg(short, long, default_value = "2.0")]
+    #[arg(short, long, default_value = "0.5")]
     max_pct: f64,
+    #[arg(short, long, default_value = "127.0.0.1:3000")]
+    addr: String,
 }
 
 fn main() {
@@ -57,7 +62,18 @@ fn run(args: Args) -> anyhow::Result<()> {
         log::debug!("{ticker}");
     }
 
-    let bus = EventBus::new();
+    let bus = Arc::new(EventBus::new());
+    let interval_ms = args.interval_ms;
+    let max_pct = args.max_pct;
+
+    log::info!("Starting tcp listener: {}", args.addr);
+    let listener_bus = Arc::clone(&bus);
+    thread::spawn(move || {
+        if let Err(e) = tcp_listener(args.addr, listener_bus) {
+            log::error!("TCP listener failed: {e}");
+        }
+    });
+
     let mut prices = Prices::new(tickers.clone());
 
     let rx = bus.subscribe(&tickers)?;
@@ -72,23 +88,15 @@ fn run(args: Args) -> anyhow::Result<()> {
         }
     });
 
-    //TODO - delete
-    let rx_test = bus.subscribe(&*vec!["AAPL".to_string(), "MSFT".to_string()])?;
-    thread::spawn(move || {
-        for event in rx_test {
-            log::info!("{}", event.quote,);
-        }
-    });
-
-    let interval = Duration::from_millis(args.interval_ms);
+    let interval = Duration::from_millis(interval_ms);
     log::info!(
         "Starting price feed: {}ms interval, {:.1}% max change",
-        args.interval_ms,
-        args.max_pct
+        interval_ms,
+        max_pct
     );
 
     loop {
-        prices.update_prices(args.max_pct);
+        prices.update_prices(max_pct);
 
         for quote in prices.quotes() {
             bus.publish(Event {
@@ -99,4 +107,93 @@ fn run(args: Args) -> anyhow::Result<()> {
 
         thread::sleep(interval);
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Client {
+    pub ip: String,
+    pub port: u16,
+    pub stocks: Vec<String>,
+}
+
+fn tcp_listener(addr: String, bus: Arc<EventBus>) -> std::io::Result<()> {
+    let listener = TcpListener::bind(&addr)?;
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                let client_bus = Arc::clone(&bus);
+                thread::spawn(move || {
+                    if let Err(e) = handle_client(stream, client_bus) {
+                        log::error!("Client error: {e}");
+                    }
+                });
+            }
+            Err(e) => log::error!("Accept error: {e}"),
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_client(stream: TcpStream, bus: Arc<EventBus>) -> anyhow::Result<()> {
+    let peer = stream.peer_addr()?;
+    log::info!("New connection from {peer}");
+
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line)?;
+    let line = line.trim();
+
+    let client =
+        parse_command(line).with_context(|| format!("invalid command from {peer}: {line}"))?;
+
+    log::info!(
+        "Client {peer} → udp://{}:{} stocks={:?}",
+        client.ip,
+        client.port,
+        client.stocks
+    );
+
+    let rx = bus.subscribe(&client.stocks)?;
+    let socket = UdpSocket::bind("0.0.0.0:0")?;
+    let dest = format!("{}:{}", client.ip, client.port);
+
+    for event in rx {
+        let bytes = event.quote.to_bytes();
+        if let Err(e) = socket.send_to(&bytes, &dest) {
+            log::error!("UDP send to {dest} failed: {e}");
+            break;
+        }
+    }
+
+    log::info!("Client {peer} disconnected");
+    Ok(())
+}
+
+fn parse_command(line: &str) -> anyhow::Result<Client> {
+    let parts: Vec<&str> = line.splitn(3, ' ').collect();
+    anyhow::ensure!(
+        parts.len() == 3 && parts[0] == "STREAM",
+        "expected: STREAM udp://ip:port TICKER,..."
+    );
+
+    let url = parts[1]
+        .strip_prefix("udp://")
+        .context("expected udp:// prefix")?;
+
+    let (ip, port_str) = url.rsplit_once(':').context("missing :port")?;
+    let port: u16 = port_str.parse().context("invalid port")?;
+
+    let stocks = parts[2]
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    Ok(Client {
+        ip: ip.to_string(),
+        port,
+        stocks,
+    })
 }
