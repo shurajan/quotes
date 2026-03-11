@@ -65,7 +65,7 @@ mod tests {
             },
         };
 
-        bus.publish(event.clone());
+        let _ = bus.publish(event.clone());
         let received = rx.try_recv().unwrap();
         assert_eq!(received.ticker, "AAPL");
         assert_eq!(received.quote.price, 150.0);
@@ -76,7 +76,7 @@ mod tests {
         let bus = EventBus::new();
         let rx = bus.subscribe(&["AAPL".into()]).unwrap();
 
-        bus.publish(Event {
+        let _ = bus.publish(Event {
             ticker: "GOOG".into(),
             quote: StockQuote {
                 ticker: "GOOG".into(),
@@ -95,7 +95,7 @@ mod tests {
         let rx = bus.subscribe(&["AAPL".into(), "GOOG".into()]).unwrap();
 
         for ticker in &["AAPL", "GOOG"] {
-            bus.publish(Event {
+            let _ = bus.publish(Event {
                 ticker: ticker.to_string(),
                 quote: StockQuote {
                     ticker: ticker.to_string(),
@@ -116,7 +116,7 @@ mod tests {
         let rx = bus.subscribe(&["AAPL".into()]).unwrap();
         drop(rx);
 
-        bus.publish(Event {
+        let _ = bus.publish(Event {
             ticker: "AAPL".into(),
             quote: StockQuote {
                 ticker: "AAPL".into(),
