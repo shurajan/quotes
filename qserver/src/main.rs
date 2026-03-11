@@ -197,3 +197,42 @@ fn parse_command(line: &str) -> anyhow::Result<Client> {
         stocks,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_valid_command() {
+        let client = parse_command("STREAM udp://127.0.0.1:34254 AAPL,TSLA").unwrap();
+        assert_eq!(client.ip, "127.0.0.1");
+        assert_eq!(client.port, 34254);
+        assert_eq!(client.stocks, vec!["AAPL", "TSLA"]);
+    }
+
+    #[test]
+    fn parse_single_ticker() {
+        let client = parse_command("STREAM udp://10.0.0.1:5000 MSFT").unwrap();
+        assert_eq!(client.stocks, vec!["MSFT"]);
+    }
+
+    #[test]
+    fn parse_rejects_missing_prefix() {
+        assert!(parse_command("STREAM tcp://127.0.0.1:3000 AAPL").is_err());
+    }
+
+    #[test]
+    fn parse_rejects_bad_command() {
+        assert!(parse_command("SUBSCRIBE udp://127.0.0.1:3000 AAPL").is_err());
+    }
+
+    #[test]
+    fn parse_rejects_bad_port() {
+        assert!(parse_command("STREAM udp://127.0.0.1:99999 AAPL").is_err());
+    }
+
+    #[test]
+    fn parse_rejects_empty() {
+        assert!(parse_command("").is_err());
+    }
+}
