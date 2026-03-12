@@ -3,17 +3,16 @@ use anyhow::Context;
 use clap::Parser;
 use market_data::EventBus;
 use prices::Prices;
+use qlib::ticker_loader::load_tickers;
 use std::io::{BufRead, BufReader};
 use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use ticker_loader::load_tickers;
 
 mod market_data;
 mod prices;
-mod ticker_loader;
 
 #[derive(Parser, Debug)]
 #[command(
