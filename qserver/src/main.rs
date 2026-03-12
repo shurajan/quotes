@@ -158,6 +158,24 @@ fn handle_client(stream: TcpStream, bus: Arc<EventBus>) -> anyhow::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
     let dest = format!("{}:{}", client.ip, client.port);
 
+    // поток для чтения PING
+    let ping_socket = socket.try_clone()?;
+    thread::spawn(move || {
+        let mut buf = [0u8; 64];
+        loop {
+            match ping_socket.recv_from(&mut buf) {
+                Ok((size, addr)) => {
+                    let msg = String::from_utf8_lossy(&buf[..size]);
+                    log::info!("Received {} from {}", msg, addr);
+                }
+                Err(e) => {
+                    log::error!("Can not read PING: {}", e);
+                    break;
+                }
+            }
+        }
+    });
+
     for event in rx {
         let bytes = event.quote.to_bytes();
         if let Err(e) = socket.send_to(&bytes, &dest) {
