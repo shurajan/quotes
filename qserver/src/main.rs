@@ -175,6 +175,10 @@ fn handle_client(stream: TcpStream, bus: Arc<EventBus>) -> anyhow::Result<()> {
                 Ok((size, addr)) => {
                     let msg = String::from_utf8_lossy(&buf[..size]);
                     log::info!("Received {msg} from {addr}");
+                    if msg.trim() != "PING" {
+                        log::warn!("Unexpected message from {addr}: {msg}");
+                        break;
+                    }
                     if let Ok(mut guard) = ping_writer.write() {
                         *guard = Instant::now();
                     }
