@@ -7,9 +7,11 @@ use qlib::ticker_loader::load_tickers;
 use std::io::{BufRead, BufReader};
 use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use crossbeam_channel::RecvTimeoutError;
 
 mod market_data;
 mod prices;
@@ -158,31 +160,76 @@ fn handle_client(stream: TcpStream, bus: Arc<EventBus>) -> anyhow::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
     let dest = format!("{}:{}", client.ip, client.port);
 
-    // поток для чтения PING
+    let last_ping = Arc::new(RwLock::new(Instant::now()));
+    let alive = Arc::new(AtomicBool::new(true));
+
+    // --- Pinger thread ---
+    let ping_writer = Arc::clone(&last_ping);
+    let ping_alive = Arc::clone(&alive);
     let ping_socket = socket.try_clone()?;
-    thread::spawn(move || {
+    ping_socket.set_read_timeout(Some(Duration::from_secs(2)))?;
+    let pinger = thread::spawn(move || {
         let mut buf = [0u8; 64];
-        loop {
+        while ping_alive.load(Ordering::Relaxed) {
             match ping_socket.recv_from(&mut buf) {
                 Ok((size, addr)) => {
                     let msg = String::from_utf8_lossy(&buf[..size]);
-                    log::info!("Received {} from {}", msg, addr);
+                    log::info!("Received {msg} from {addr}");
+                    if let Ok(mut guard) = ping_writer.write() {
+                        *guard = Instant::now();
+                    }
                 }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+                    {
+                        continue;
+                    }
                 Err(e) => {
-                    log::error!("Can not read PING: {}", e);
+                    log::error!("Ping recv error: {e}");
                     break;
                 }
             }
         }
+        log::info!("Pinger for {peer} stopped");
     });
 
-    for event in rx {
-        let bytes = event.quote.to_bytes();
-        if let Err(e) = socket.send_to(&bytes, &dest) {
-            log::error!("UDP send to {dest} failed: {e}");
+    // --- Sender thread ---
+    let sender_alive = Arc::clone(&alive);
+    let sender = thread::spawn(move || {
+        while sender_alive.load(Ordering::Relaxed) {
+            match rx.recv_timeout(Duration::from_secs(1)) {
+                Ok(event) => {
+                    let bytes = event.quote.to_bytes();
+                    if let Err(e) = socket.send_to(&bytes, &dest) {
+                        log::error!("UDP send to {dest} failed: {e}");
+                        break;
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        log::info!("Sender for {peer} stopped");
+    });
+
+    // --- Main loop: watchdog ---
+    loop {
+        thread::sleep(Duration::from_secs(1));
+
+        let elapsed = last_ping
+            .read()
+            .map(|guard| guard.elapsed())
+            .unwrap_or(Duration::MAX);
+
+        if elapsed > Duration::from_secs(5) {
+            log::warn!("Client {peer} ping timeout ({elapsed:?}), shutting down");
             break;
         }
     }
+
+    alive.store(false, Ordering::Relaxed);
+    let _ = pinger.join();
+    let _ = sender.join();
 
     log::info!("Client {peer} disconnected");
     Ok(())
