@@ -1,11 +1,11 @@
 use clap::Parser;
-use log::{info, warn, error};
+use log::{error, info, warn};
 use qlib::stock_quote::StockQuote;
 use std::fs;
 use std::io::Write;
 use std::net::{SocketAddr, TcpStream, UdpSocket};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -126,11 +126,11 @@ fn receive_loop(
                 }
             }
             Err(ref e)
-            if e.kind() == std::io::ErrorKind::WouldBlock
-                || e.kind() == std::io::ErrorKind::TimedOut =>
-                {
-                    continue;
-                }
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                continue;
+            }
             Err(e) => {
                 return Err(Box::new(e));
             }
@@ -151,7 +151,10 @@ fn ping(socket: Arc<UdpSocket>, src_addr: SocketAddr, shutdown: Arc<AtomicBool>)
                 failures += 1;
                 error!("Ping failed ({}/{}): {}", failures, MAX_FAILURES, e);
                 if failures >= MAX_FAILURES {
-                    error!("Max ping failures reached ({}), shutting down", MAX_FAILURES);
+                    error!(
+                        "Max ping failures reached ({}), shutting down",
+                        MAX_FAILURES
+                    );
                     shutdown.store(true, Ordering::Relaxed);
                     return;
                 }
