@@ -56,7 +56,7 @@ cargo build --release
 
 # Custom options
 ./target/release/qserver \
-  --tickers config/test_tickers.txt \
+  --tickers config/five_tickers.txt \
   --addr 127.0.0.1:3000 \
   --interval-ms 100 \
   --max-pct 1.0 \
@@ -79,7 +79,7 @@ cargo build --release
 ./target/release/qclient \
   --server 127.0.0.1:3000 \
   --udp-port 34254 \
-  --tickers-file config/test_tickers.txt
+  --tickers-file config/five_tickers.txt
 ```
 
 **Client options:**
