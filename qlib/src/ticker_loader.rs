@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const DEFAULT_TICKERS: &str = include_str!("../../config/tickers.txt");
+const DEFAULT_TICKERS: &str = include_str!("../../config/all_tickers.txt");
 
 #[derive(Debug)]
 pub enum TickerLoadError {

@@ -5,3 +5,7 @@ edition = "2024"
 
 [dependencies]
 qlib = { path = "../qlib", version = "0.1.0" }
+env_logger.workspace = true
+log.workspace = true
+ctrlc.workspace = true
+clap.workspace = true
