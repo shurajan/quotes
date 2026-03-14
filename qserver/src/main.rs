@@ -7,7 +7,7 @@ use qlib::ticker_loader::load_tickers;
 use std::io::{BufRead, BufReader};
 use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc, RwLock};
+use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
